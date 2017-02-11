@@ -1,6 +1,6 @@
 # Locating the Sources of Large-Scale Outbreaks on Networks
 
-![alt tag](http://network-outbreak-traceback/utility/regional_network_pic.png)
+![alt tag](https://raw.githubusercontent.com/elenapolozova/network-outbreak-traceback/master/utility/regional_network_pic.png)
 
 One Paragraph of project description goes here
 
