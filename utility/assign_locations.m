@@ -1,8 +1,15 @@
-% stages = cell in which each row is a vector of the node ids in its stage
-% (analagous to node_layers in random_layered_graph)
-% locations = cell in which each row is a vector of the (x,y) tuples
-% encoding locations of their corresponding nodes in node_layers
-function [node_data, dist_mat, locations] = assign_locations(node_assignments, adj, show_plots) 
+% January 2017 implementation of location assignment
+
+% --- INPUTS ---
+% node_assignments = cell in which each row is a vector of the node ids in its stage (as output from random_layered_graph)
+% adj = adjacency matrix of the network, with transition probabilities as edge weights.
+% show_plots = a boolean. If true, will display informative pop-up graphs.
+
+% --- OUTPUTS ---
+% dist_mat = adjacency matrix with distances as edge weights.
+% locations = cell in which each row is a column vector of the (x,y) tuples.
+
+function [dist_mat, locations] = assign_locations(node_assignments, adj, show_plots) 
     w = 2500; % grid width
     h = 1500; % grid height
     node_data = []; % purely an internal variable: node_data(n, :) = [stage of n, n's index within stage, n's x-coord, n's y-coord]

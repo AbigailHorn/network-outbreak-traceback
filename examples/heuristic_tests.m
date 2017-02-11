@@ -1,4 +1,4 @@
-% Example code
+% Example code: generates a new network, propagates an outbreak on it, and reports performance of heuristic methods
 
 addpath('../utility'); % allow access to the other code
 
@@ -20,7 +20,7 @@ display_network = true;
     network_params, show_plots, display_network);
 % Assign network locations
 show_loc_plots = true;
-[node_data, dists, node_locs] = assign_locations(node_layers, flows, show_loc_plots);
+[dists, node_locs] = assign_locations(node_layers, flows, show_loc_plots);
 
 % Set up parameters to simulate a deterministic outbreak
 dispersion = 'max';

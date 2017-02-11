@@ -3,21 +3,41 @@
 % --- INPUTS ---
 % dispersion = 'max' or 'min'
 % src_farm = the integer id for the farm to start the contamination from. (Enter a negative integer for random start location.)
-% distances = adjacency matrix with distances as edge weights.
-% locations = cell in which each row is a vector of the (x,y) tuples (as output from assign_distances).
-% flows = adjacency matrix with outgoing flows as edge weights.
-% init_vols = square diagonal matrix of initial volumes.
-% num_stages = integer describing number of stages.
+% distances = adjacency matrix with distances as edge weights
+% locations = cell in which each row is a vector of the (x,y) tuples (as output from assign_distances)
+% flows = adjacency matrix with outgoing flows as edge weights
+% init_vols = square diagonal matrix of initial volumes
+% num_stages = integer describing number of stages
 % return_all_reports = a boolean. If true, will return all contamination reports. If false, will return only the first ones at each contaminated node.
 % show_plots = a boolean. If true, will display informative pop-up graphs.
-% transport_dev_frac = the fraction of the mean transport time that is considered the transport time's standard deviation.
+% transport_dev_frac = the fraction of the mean transport time that is considered the transport time's standard deviation
 %    (specifically: the variance of transportation time will be set to (transport_dev_frac*cum_time)^2)
-% storage_is_determ = binary switch for stochasticity of all post-transport variables, including shelf life, etc.
+% binary switch for stochasticity of all post-transport variables, including shelf life, etc.
 
 % -- OUTPUTS -- 
-% contam_farm = the integer id of the farm the contamination started at.
-% contam_reports = first row is the node_IDs contamination was observed at; second row is the corresponding time.
+% contam_farm = 
 
+% flows = an adjacency matrix for the network with transition probabilities as edge weights
+% stage_starts_ends(stage) = last node in stage
+% prior_pmf = row vect of prior probability such that prior_pmf(s) = probability of source node s if contam_observed_nodes is empty
+% contam_reports = first row is the node_ID contamination observed at; second row is the corresponding time
+
+% P = percentage of contaminated nodes that must be connected to a farm node for the algorithm to consider it a feasible source
+% transport_dev_frac = the fraction of the mean transport time that is considered the transport time's standard deviation
+
+% --- OUTPUTS ---
+% pmf = a row vector of the likelihood of each farm node being the source
+% time_estimates = a row vector of the maximum likelihood start time for hypothetical contamination from each source
+
+
+% outbreak6: gives times consumed, which can be used to calculate number of illnesses averted
+% Abby's outbreak with f=.0077 but 1/500 reporting (vs. 1/50)
+% dispersion = 'max' or 'min'
+% distances = adjacency matrix with distances as edge weights
+
+% contam_retailers = 2 x num_contam_retailers matrix. first row is the contam node IDs, 2nd is the reporting times at them
+% transport_dev_frac = variance of transportation time will be set to (transport_dev_frac*cum_time)^2
+% storage_is_determ = binary switch for stochastisity of all post-transport variables, including shelf life, etc.
 function [contam_farm, contam_reports] = outbreak(dispersion, src_farm, distances, locations, flows, init_vols, num_stages, return_all_reports, show_plots, transport_dev_frac, storage_is_determ)
     'Propagating outbreak on input network...'
     % calculate volumes and acreage at each farm node

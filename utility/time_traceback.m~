@@ -3,17 +3,26 @@
 % --- INPUTS ---
 % estimator = an integer between 1 and 11, inclusive
 % flows = an adjacency matrix for the network with transition probabilities as edge weights
-% stage_ends(stage) = last node in stage.
+% stage_starts_ends(stage) = last node in stage
 % prior_pmf = row vect of prior probability such that prior_pmf(s) = probability of source node s if contam_observed_nodes is empty
 % contam_reports = first row is the node_ID contamination observed at; second row is the corresponding time
 % distances = adjacency matrix with distances as edge weights
 % P = percentage of contaminated nodes that must be connected to a farm node for the algorithm to consider it a feasible source
-% transport_dev_frac = the fraction of the mean transport time that is considered the transport time's standard deviation
+% transport_dev_frac = the fraction of the mean transport time that is
+% taken as the transport time's standard deviation
 
 % --- OUTPUTS ---
-% pmf = a row vector of the likelihood of each farm node being the source
-% time_estimates = a row vector of the maximum likelihood start time for hypothetical contamination from each source
+% pmf = the likelihood of each farm node being the source
 
+
+% The new one! January 2017 time traceback formulation
+% ~INPUTS~ 
+% contam_reports = first row is the node ID report observed at, second row is the time
+% heuristic = 'exact', 'bfs', or 'mean'
+% include_volumes = true or false. pairs with heuristic time_estimator components
+% ~OUTPUTS~
+% pmf = a vector such that pmf(node_ID) the likelihood of node_ID being the source
+% t_hat_star = the MLE outbreak start time
 function [pmf, time_estimates] = time_traceback(estimator, flows, stage_ends, prior_pmf, contam_reports, distances, P, transport_dev_frac)
 
 pmf = zeros([1, stage_ends(1)]); % pmf will eventually be row vect of a prob for each potential source

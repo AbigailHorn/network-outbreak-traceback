@@ -16,11 +16,17 @@
 % display_network = a boolean. If true, will pop-up display a picture of the network.
 
 % --- OUTPUTS ---
-% adj = adjacency matrix of the network, with transition probabilities as edge weights.
-% node_assignments = column cell in which each row is an array of the node IDs in its layer.
-% init_vols = a row vector containing the initial volume fractions allocated to each farm node.
-% stage_ends = row vector such that stage_ends(s) = ID of last node in stage s.
+% adj = 
+% node_assignments = column cell in which each row is an array of the node labels in its layer.
+% init_vols = 
+% stage_ends = 
 
+
+
+% Notes to user:
+% * Every <distrib>_assign_degrees function only assigns degrees *on top* of
+% the guaranteed-at-least-one per node.
+% * Every <distrib>_assign_degrees function only returns a number of edges that is somewhat close to num_edges (the target)
 function [adj, node_assignments, init_vols, stage_ends] = random_layered_graph(node_counts,i_vol_dist,layer_params, show_plots, display_network)
 
     [num_layers, ~] = size(layer_params);
