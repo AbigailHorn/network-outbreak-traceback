@@ -1,5 +1,7 @@
 # Locating the Sources of Large-Scale Outbreaks on Networks
 
+![alt tag](network-outbreak-traceback/utility/regional_network_pic.png)
+
 One Paragraph of project description goes here
 
 ## Getting Started
