@@ -1,0 +1,457 @@
+% Notes:
+% ts_info weighted by path probability before ts optimization
+
+% --- PRECONDITION ---
+% flows = an adjacency matrix for the network with transition probabilities as edge weights
+% stage_starts_ends(stage) = last node in stage
+% prior_pmf = row vect of prior probability. prior_pmf(s) = probability of source node s if contam_observed_nodes is empty
+% contam_observed_nodes also contains time in 2nd row
+% distances = adjacency matrix with distances as edge weights
+% tau = contamination time uncertainty
+% P = percentage of contaminated nodes that must be connected to a source
+% before it's deemed "feasible"
+
+% --- POSTCONDITION ---
+% pmf = the likelihood of each node being the source
+
+
+% The new one! January 2017 time traceback formulation
+% ~INPUTS~ 
+% estimator = an integer between 1 and 11, inclusive
+% use_volumes = a boolean indicting whether or not the returned estimates will be influenced by network volume information
+% contam_reports = first row is the node ID report observed at, second row is the time
+% heuristic = 'exact', 'bfs', or 'mean'
+% include_volumes = true or false. pairs with heuristic time_estimator components
+% ~OUTPUTS~
+% pmf = a vector such that pmf(node_ID) the likelihood of node_ID being the source
+% t_hat_star = the MLE outbreak start time
+function [pmf, time_estimates] = time_traceback(estimator, flows, stage_ends, prior_pmf, contam_reports, distances, P, transport_dev_frac)
+
+pmf = zeros([1, stage_ends(1)]); % pmf will eventually be row vect of a prob for each potential source
+flows = sparse(flows); % for runtime
+
+% identify feasible sources as those which reach a fraction >= P of all contaminated nodes
+feasible_sources = 1:stage_ends(1); % initialize to list of all farm nodes
+reaches = zeros(size(feasible_sources)); % contains num of contaminated nodes reached by farm of same index
+for c_node = unique(contam_reports(1,:)) % compute all potential sources
+    last_parents = c_node;
+    while ~isempty(parents(last_parents, flows))
+        last_parents = parents(last_parents, flows);
+    end % end while
+    reaches(last_parents) = reaches(last_parents) + 1; % update reach counts
+end % end for
+feasible_sources = find(reaches >= P*length(unique(contam_reports(1,:)))); % feasible sources IDs are those which reach a fraction-greater-than-P of contaminated nodes
+
+
+switch estimator
+    case 1 % exact -- volume only (Markov Chain matrix method)
+        vol_pmf = exact_volume_component(feasible_sources, contam_reports, flows, stage_ends);
+        pmf = vol_pmf.*prior_pmf; % elementwise multiply
+        time_estimates = NaN * ones(size(pmf)); % error value, this method doesn't compute t_hat_star
+    
+    case 2 % exact -- time only (Gaussians & messy integral)
+        time_pmf = exact_estimator(false, feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        size(prior_pmf)
+        size(time_pmf)
+        pmf = time_pmf.*prior_pmf;
+        time_estimates = NaN * ones(size(pmf));
+        
+    case 3 % exact -- volume and time (considering all possible diffusion trajectories)
+        vol_and_time_pmf = exact_estimator(true, feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = vol_and_time_pmf.*prior_pmf;
+        time_estimates = NaN * ones(size(pmf));
+        
+    case 4 % bfs heuristic: time alone, exact (integrated)
+        time_pmf = heuristic_time_pmf('bfs', 'exact', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = time_pmf(1,:).*prior_pmf;
+        time_estimates = NaN * ones(size(pmf)); % this method doesn't generate t*
+    
+    case 5 % bfs heuristic: time alone, t_s*
+        time_pmf = heuristic_time_pmf('bfs', 't_s_star', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = time_pmf(1,:).*prior_pmf;
+        time_estimates = time_pmf(2, :);
+    
+    case 6 % MaxP heuristic: time alone, exact (integrated)
+        time_pmf = heuristic_time_pmf('MaxP', 't_s_star', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = time_pmf(1,:).*prior_pmf;
+        time_estimates = NaN * ones(size(pmf));
+        
+    case 7 % MaxP heuristic: time alone, t_s*
+        time_pmf = heuristic_time_pmf('MaxP', 't_s_star', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = time_pmf(1,:).*prior_pmf;
+        time_estimates = time_pmf(2, :);
+    
+    case 8 % bfs heuristic: integrated time + volume
+        vol_pmf = exact_volume_component(feasible_sources, contam_reports, flows, stage_ends);
+        time_pmf = heuristic_time_pmf('bfs', 'exact', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = vol_pmf.*time_pmf(1,:).*prior_pmf; % elementwise multiply
+        time_estimates = NaN * ones(size(pmf));
+    
+    case 9 % bfs heuristic: t_s* + volume
+        vol_pmf = exact_volume_component(feasible_sources, contam_reports, flows, stage_ends);
+        time_pmf = heuristic_time_pmf('bfs', 't_s_star', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = vol_pmf.*time_pmf(1,:).*prior_pmf; % elementwise multiply
+        time_estimates = time_pmf(2, :);
+    
+    case 10 % MaxP heuristic: integrated time + volume
+        vol_pmf = exact_volume_component(feasible_sources, contam_reports, flows, stage_ends);
+        time_pmf = heuristic_time_pmf('MaxP', 'exact', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = vol_pmf.*time_pmf(1,:).*prior_pmf;
+        time_estimates = NaN * ones(size(pmf)); 
+    
+    case 11 % MaxP heuristic: t_s* + volume
+        vol_pmf = exact_volume_component(feasible_sources, contam_reports, flows, stage_ends);
+        time_pmf = heuristic_time_pmf('MaxP', 't_s_star', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        pmf = vol_pmf.*time_pmf(1,:).*prior_pmf;
+        time_estimates = time_pmf(2, :);
+end
+
+pmf = pmf / sum(pmf); % normalize
+
+end % end function
+
+
+% use_volume = a boolean, telling you whether to include volume in the estimator or not
+% ('MaxP', 't_s_star', feasible_sources, contam_reports, flows, distances, stage_ends);
+function pmf = exact_estimator(use_volumes, feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac)
+    % initialize time_pmf to correct size
+    pmf = zeros([1, stage_ends(1)]); % one row for probability (no t_s* generated)
+    num_reports = length(contam_reports(1,:));
+
+    % construct volume-by-edge vector f_k
+    
+    % start maintaining edge_data, such that edge_data(k) = [from to dist edge_prob]
+    edge_data = zeros([nnz(flows), 4]); % one row for each edge, of [from to dist edge_prob]
+    edge_lin_inds = find(flows);
+    for ind_ind = 1:length(edge_lin_inds)
+        [from, to] = ind2sub(size(flows), edge_lin_inds(ind_ind));
+        edge_data(ind_ind, :) = [from to distances(edge_lin_inds(ind_ind)) flows(edge_lin_inds(ind_ind))];
+    end % end for
+    
+    
+    for s = feasible_sources
+    % for each unique contaminated node, generate all possible paths from s
+        unique_contam_nodes = unique(contam_reports(1,:)); % maintain stable index
+        unique_paths = cell([1, length(unique(contam_reports(1,:)))]); % stores a matrix of paths s --> contam_node at each index
+        for contam_node = unique_contam_nodes
+            unique_paths{find(unique_contam_nodes == contam_node)} = all_paths_between(s, contam_node, flows);
+        end % end for
+        
+        % calculate number of unique diffusion trajectories
+        num_diff_trajs = 1;
+        for contam_node = contam_reports(1,:)
+            num_diff_trajs = num_diff_trajs * size(unique_paths{find(unique_contam_nodes == contam_node)}, 1); % paths are rows
+        end
+        % calculate for each report, which number of diff traj's to increment the "active path" after 
+        % (this is a tool to aide in iterating over diffusion trajectories)
+        incr_paths_after = ones([1, num_reports]);
+        for report = 2:num_reports
+            prev_report_ID = contam_reports(1, report-1);
+            num_of_paths_to_prev_report = size(unique_paths{find(unique_contam_nodes==prev_report_ID)}, 1);
+            incr_paths_after(report) = incr_paths_after(report-1) * num_of_paths_to_prev_report;
+        end
+        
+        active_paths = ones([1, num_reports]);
+        % sum probability contribution from every diffusion trajectory
+        
+        prob = 0;
+        
+        for diff_traj = 0:(num_diff_trajs-1)
+            if mod(diff_traj, 1000) == 0
+                strcat('Evaluating diffusion trajectory', {' '}, num2str(diff_traj), ' out of', {' '}, num2str(num_diff_trajs), '...')
+            end 
+            
+            paths = zeros([num_reports, length(unique_paths{1}(1,:))]); % to keep generalizable number of stages, get path length by checking
+            % [add to paths the paths spec'd by active_paths]
+            for observation = 1:length(active_paths)
+                unique_ind_of_node = find(unique_contam_nodes==contam_reports(1, observation));
+                paths(observation, :) = unique_paths{unique_ind_of_node}(active_paths(observation), :); % retrieve the right path
+            end
+            
+            c_s = c_matrix(paths, edge_data);
+            
+            if use_volumes
+                vol_term = exp(ones([1, num_reports]) * c_s * edge_data(:,4));
+                time_term = exact_time_component_from_c(c_s, contam_reports, edge_data, transport_dev_frac);
+                prob = prob + vol_term * time_term;
+            else
+                prob = prob + exact_time_component_from_c(c_s, contam_reports, edge_data, transport_dev_frac); % just time term
+            end
+            
+            % increment active_paths as necessary
+            ind_of_largest_divisor = 1;
+            keep_checking = true; % sadly, complicated logical path needed because and() args don't eval left-to-right
+            while keep_checking
+                if ind_of_largest_divisor < num_reports
+                    if mod(diff_traj, incr_paths_after(ind_of_largest_divisor + 1)) == 0
+                        ind_of_largest_divisor = ind_of_largest_divisor + 1; % if two conditions satisfied, incr
+                    else
+                        keep_checking = false; % if one fails, stop incrementing or checking
+                    end % end inner if
+                else
+                    keep_checking = false; % if one fails, stop incrementing or checking
+                end % end if
+            end % end while
+            
+            active_paths(1:ind_of_largest_divisor-1) = ones([1, ind_of_largest_divisor-1]); % reset all before the val getting incremented
+            active_paths(ind_of_largest_divisor) = 1; % increment the rightmost possible value
+        end % end for over diff trajs
+        pmf(s) = prob;
+    end % end for over possible sources
+end
+
+
+% Integrals and Gaussians estimator
+% Given a matrix C, returns the time probability factor for each feasible
+% source
+function prob = exact_time_component_from_c(c_s, contam_reports, edge_data, transport_dev_frac)
+    mu_theta = edge_data(:, 3) / 630; % mean travel time of each edge, in days
+    Sigma_theta = diag(transport_dev_frac * mu_theta); % CHANGE THIS COEFF
+    t_vec = contam_reports(2, :).';
+    mu_d = ones(size(t_vec)) * 8.5; % mean delay from 2 rounds of storage + incubation times
+    
+    mu_s = c_s * mu_theta + mu_d;
+    Sigma_s = c_s * Sigma_theta * c_s.' + eye(length(contam_reports(1,:))) * 12.25;
+    Sigma_s_inv = inv(Sigma_s);
+    
+    num_obs = length(t_vec); % italic O, = number of contamination reports
+    
+    % Define all the constants that go into the temporal component
+    alpha = 0.5 * ones([1, num_obs]) * Sigma_s_inv * ones([num_obs, 1]);
+    beta = (t_vec - mu_s).' * Sigma_s_inv * ones([num_obs, 1]);
+    c = 0.5 * (t_vec - mu_s).' * Sigma_s_inv * (t_vec - mu_s);
+    D = 1 / ((2*pi)^(num_obs/2) * det(Sigma_s)^0.5);
+    
+    J_s_pi = D * exp((beta^2)/(4*alpha) - c) * sqrt(pi/alpha); 
+    
+    prob = J_s_pi; % return
+end
+
+
+% time_pmf has two rows: first for prob, second for t_s_star associated with that prob
+% t_estimator = 'exact', or 't_s_star'
+% heuristic = 'bfs' or 'MaxP'
+function time_pmf = heuristic_time_pmf(heuristic, t_estimator, feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac)
+    % setup for the appropriate heuristic: get the right characteristic_contam_reports
+    characteristic_contam_reports = unique(contam_reports(1, :));
+    characteristic_contam_reports(2, :) = ones(size(characteristic_contam_reports)) * Inf; % initialize for finding min
+    switch heuristic
+        case 'bfs'
+            % find first arrival time at each node
+            for time = contam_reports % for every (retailer_ID, time) report tuple
+                col_of_node = characteristic_contam_reports(1, :) == time(1); % logical array
+                if time(2) < characteristic_contam_reports(2, col_of_node)
+                    characteristic_contam_reports(2, col_of_node) = time(2);
+                end
+            end % end for 
+        case 'MaxP'
+            for col = 1:length(characteristic_contam_reports(1,:))
+                node = characteristic_contam_reports(1, col);
+                reports_of_node = contam_reports(:, contam_reports(1, :) == node);
+                characteristic_contam_reports(2, col) = mean(reports_of_node(2, :)); % set 'characteristic time' as mean reported time        end % end for
+            end
+    end % end switch
+
+    % start maintaining edge_data, such that edge_data(k) = [from to length]
+    edge_data = zeros([nnz(flows), 3]); % one row for each edge, of [from to length]
+    edge_lin_inds = find(flows);
+    for ind_ind = 1:length(edge_lin_inds)
+        [from, to] = ind2sub(size(flows), edge_lin_inds(ind_ind));
+        edge_data(ind_ind, :) = [from to distances(edge_lin_inds(ind_ind))];
+    end % end for
+    
+    % initialize time_pmf to correct size
+    switch t_estimator
+        case 't_s_star'
+            time_pmf = zeros([2, stage_ends(1)]); % one row for probability, one row for associated t_s*
+        case 'exact'
+            time_pmf = zeros([1, stage_ends(1)]); % one row for probability (no t_s* generated)
+    end % end switch
+    
+    % compute time_pmf
+    for s = feasible_sources
+        switch heuristic
+            case 'bfs'
+                c_s = c_shortest(s, characteristic_contam_reports(1,:), flows, edge_data); % c matrix representing shortest path tree to O from s
+            case 'MaxP'
+                c_s = c_MaxP(s, characteristic_contam_reports(1,:), flows, edge_data); % c matrix representing most likely path tree to O from s
+        end
+        
+        switch t_estimator
+            case 't_s_star'
+                [prob, t_s_star] = time_estimator_from_c(c_s, characteristic_contam_reports, edge_data, transport_dev_frac);
+                time_pmf(2, s) = t_s_star;
+            case 'exact'
+                prob = exact_time_component_from_c(c_s, characteristic_contam_reports, edge_data, transport_dev_frac);
+        end % end switch
+        
+        time_pmf(1, s) = prob;
+    end % end for
+    
+end % end bfs_time_estimator
+
+
+
+% uses t_s*
+function [prob, t_s_star] = time_estimator_from_c(c_s, contam_reports, edge_data, transport_dev_frac)
+    mu_theta = edge_data(:, 3) / 630; % mean travel time of each edge, in days
+    Sigma_theta = diag(transport_dev_frac * mu_theta); % CHANGE THIS COEFF
+    t_vec = contam_reports(2, :).';
+    mu_d = ones(size(t_vec)) * 8.5; % mean delay from 2 rounds of storage + incubation times
+    
+    mu_s_star = c_s * mu_theta + mu_d;
+    Sigma_s = c_s * Sigma_theta * c_s.' + eye(length(contam_reports(1,:))) * 12.25;
+    
+    t_s_star = (t_vec - mu_s_star).' * inv(Sigma_s) * ones(size(mu_d)); % eq 12 numerator
+    t_s_star = t_s_star / (ones(size(mu_d.')) * inv(Sigma_s) * ones(size(mu_d))); % divide by eq 2 denominator
+    
+    % now use t_hat_star for other stuff
+    num_obs = length(t_vec); % retroactively define italic O
+    mu_s_hat = ones([num_obs, 1])*t_s_star + c_s*mu_theta + mu_d;
+    
+    max_temporal_likelihood = exp(-0.5*(t_vec - mu_s_hat).' * inv(Sigma_s) * (t_vec - mu_s_hat));
+    max_temporal_likelihood = 1/sqrt(det(Sigma_s)) * max_temporal_likelihood; % add the coeff
+    
+    prob = max_temporal_likelihood; % return
+end
+
+% Given a list of feasible sources, the volume-flow adjacency matrix, and stage_ends, 
+% computes and returns the 'exact volume component' of pmf, as defined by the Markov Chain matrix method
+function vol_pmf = exact_volume_component(feasible_sources, contam_reports, flows, stage_ends)
+    vol_pmf = zeros([1, stage_ends(1)]);
+
+    num_stages = length(stage_ends); % for convenience
+    I_t = eye(stage_ends(num_stages-1));
+    Q = flows(1:stage_ends(end-1), 1:stage_ends(end-1));
+    A = inv(I_t - Q)*flows(1:stage_ends(end-1), stage_ends(end-1)+1:stage_ends(end));
+    
+    for s = feasible_sources
+        diff_traj_likelihood = 1; % multiply all path probabilities together onto this variable
+        
+        for node_ID = contam_reports(1, :)
+            path_likelihood = A(s, node_ID-stage_ends(end-1)); % likelihood that the current observation started at s, summed over all possible paths
+            diff_traj_likelihood = diff_traj_likelihood * path_likelihood; % probability of source s generating the whole collection of reports
+        end % end for
+        
+        vol_pmf(s) = diff_traj_likelihood;
+    end 
+end
+
+
+% directly return the relevant c matrix data structure
+% this one is based on distance! 
+function c_s = c_shortest(s, contam_nodes, dists, edge_data)
+    % prepare for shortest-path search over distances
+    dists_bg = biograph(dists);
+    
+    paths = [];
+    % compute shortest cascade
+    for node_ID = contam_nodes % create matrix data structure. first col is probability of path; remaining cols are nodes in path
+        [~, path, ~] = shortestpath(dists_bg, s, node_ID, 'Method', 'Acyclic');
+        paths = [paths; path];
+    end % end for 
+    % paths now stores the path that would have been the shortest to each observation
+
+    c_s = c_matrix(paths, edge_data);  
+end
+
+% directly return the relevant c matrix data structure
+% this is for the 'mean' heuristic
+% edge_data(s) = [from to dist] (note that edge_data(:, 3)) = theta
+function c_s = c_MaxP(s, contam_nodes, flows, edge_data)
+    paths = [];
+    % compute max cascade
+    for node_ID = contam_nodes % create matrix data structure. first col is probability of path; remaining cols are nodes in path
+        [~, path] = max_prob_path(s, node_ID, flows); % each row is a different path     
+        paths = [paths; path];
+    end % end for 
+  
+    % convert max_prob_diff_traj to format of c (an O-by-K matrix)
+    % 1 row for each observation, and cols are binary: 1 if in shortest path from s to the obs, else 0
+    c_s = c_matrix(paths, edge_data);
+end
+
+% Given a list of paths (as lists of nodes) (one path per row) representing a diffusion trajectory,
+% and edge_data as maintained internally,
+% Returns the num_paths-by-K c_s matrix describing the diffusion trajectory
+function c_s = c_matrix(paths, edge_data)
+    [num_paths, ~] = size(paths);
+    [K, ~] = size(edge_data); % get the number of edges in the graph
+    c_s = sparse(zeros([num_paths, K])); % initialize
+    
+    for ind_of_path = 1:num_paths % iterate over each path
+        
+        for ind_in_path = 2:length(paths(ind_of_path, :)) % iterate through path, starting right after start node
+            from_ID = paths(ind_of_path, ind_in_path-1); 
+            to_ID = paths(ind_of_path, ind_in_path);
+            edge_ind = intersect(find(edge_data(:,1) == from_ID), find(edge_data(:,2) == to_ID)); % get the index of the edge that connects the nodes
+            c_s(ind_of_path, edge_ind) = 1; 
+        end % end for 
+    end % end for
+end
+       
+
+function [mean, std_dev] = path_prob_stats(path, dists)
+    % get the path time
+    total_dist = 0; % initialize total path dist
+    for i = 2:length(path) % for each edge in the path
+        total_dist = total_dist + dists(path(i-1), path(i)); % deterministic time component 
+    end % end for
+    
+    mean = total_dist/630; % deterministic distance travel component
+    determ_variance = (0.25*mean)*(0.25*mean); % according to "propagatio ratio"
+    mean = mean + 8.5; % add offset mu_ab as given in travel time densities specs
+    % truncate mean appropriately
+    %mean = max(mean, total_dist/20);
+    %mean = min(mean, total_dist/80);
+    std_dev = sqrt(determ_variance + 1.5*1.5 + 3*3 + 1*1); % + 15.25 % likewise add offset, also convert from variance to std_dev
+end % end function
+
+
+% start_node = ID of path start node
+% end_node = ID of path end node
+% flows = the adjacency matrix of the network we're operating over
+% path = [start_node ... ... end_node]; where path(i) is the i-th node in
+% the max probability path from start to end
+function [prob, path] = max_prob_path(start_node, end_node, flows)
+    % transform to reduce the problem to one of shortest-path searching
+    transf_flows = 1 - log(flows);
+    transf_flows(transf_flows == Inf) = 0; % replace every resulting in Inf with 0
+    transf_flows_bg = biograph(transf_flows);
+
+    [prob, path, ~] = shortestpath(transf_flows_bg, start_node, end_node, 'Method', 'Acyclic');
+    prob = exp(-(prob - length(path)+1)); 
+end 
+
+% paths = a matrix with one path per row (inclusive of start_node and end_node)
+function paths = all_paths_between(start_node, end_node, flows)
+    paths = end_node;
+    % get every full-length path leading into end_node
+    while ~isempty(parents(unique(paths(:,1)).', flows)) % while we can still traverse up the supply chain
+        extended_paths = zeros([0, size(paths,2)+1]); % empty matrix with one extra col
+        for path = paths.' % iterate over all cols
+            upstream_nodes = parents(path(1), flows);
+            new_paths = repmat(path.', [length(upstream_nodes), 1]); % make enough copies of end of path
+            new_paths = horzcat(upstream_nodes.', new_paths); 
+            extended_paths = [extended_paths; new_paths];
+        end % end for
+        paths = extended_paths; % went one layer up the supply chain
+    end
+    
+    paths = paths(find(paths(:,1) == start_node), :); % keep one the ones that start at start_node
+end
+
+
+% node_set = array of node IDs that we are querying for the overall set of ancestors of. Assumed to all be in same stage.
+% flows = the adjacency matrix
+% prents = an array containing all the IDs of parents of node_set
+function prents = parents(node_set, flows)
+    prents = [];
+    for j = 1:length(node_set)
+        prents = union(prents, find(flows(:, node_set(j)))); % find each node that leads into nodes in j
+        [r, c] = size(prents);
+        if r > c % make sure it comes out as a row vector
+            prents = prents.';
+        end % end if
+    end % end for
+end % end ancestors
