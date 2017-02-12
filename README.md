@@ -2,7 +2,7 @@
 
 ![alt tag](https://raw.githubusercontent.com/elenapolozova/network-outbreak-traceback/master/utility/regional_network_pic.png)
 
-[one paragraph of project description goes here]
+Foodborne illness outbreaks impose enormous health and economic burdens in the US and around the world. This repository contains work completed in collaboration with the Institute for Data, Systems, and Society at MIT, as well as Kuhne Logistics University, towards applying modern analytical techniques to the problem of traceback over outbreaks on an underlying network. 
 
 ## Getting Started
 
