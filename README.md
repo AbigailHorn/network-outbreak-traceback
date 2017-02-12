@@ -2,7 +2,7 @@
 
 ![alt tag](https://raw.githubusercontent.com/elenapolozova/network-outbreak-traceback/master/utility/regional_network_pic.png)
 
-One Paragraph of project description goes here
+[one paragraph of project description goes here]
 
 ## Getting Started
 
