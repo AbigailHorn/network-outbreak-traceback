@@ -55,6 +55,7 @@ end
 
 % don't pick out the single t_s_star, but if you were going to do that this is how you would
 % max_prob_nodes = find(pmf == max(pmf)); % make array in case there's more than one
+% max_prob_t_s_star = t_s_stars(max_prob_nodes(1));
 
 'Printing summary statistics from all tracebacks...'
 '[Method_ID    t_s_star_1    [pmf ...]]'
