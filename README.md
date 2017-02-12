@@ -10,6 +10,10 @@ Download all files and check out the ‘examples’ folder! heuristic_tests.m wa
 
 Documentation for each utility function can be found in comments at the top of the files.
 
+### Prerequisites
+
+MATLAB_R2016a required.
+
 ### What’s Included
 
 * Network connectivity generation
