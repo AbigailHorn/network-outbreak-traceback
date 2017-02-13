@@ -5,13 +5,13 @@ addpath('../utility'); % allow access to the other code
 % Create small, simple network. 6 nodes per stage, each with in/out deg = 4.
 
 % Set parameters
-avg_deg = 3; 
+avg_deg = 2; 
 node_counts = [6 6 6 6]; % formerly n1
 init_vol_dist = 'bin';
 network_params = cell(3, 4);
-network_params(1, :) = {avg_deg, 'out', 'bin', 'bin'};
-network_params(2, :) = {avg_deg, 'out', 'bin', 'bin'};
-network_params(3, :) = {avg_deg, 'out', 'bin', 'bin'};
+network_params(1, :) = {avg_deg, 'out', 'geo','geo'};
+network_params(2, :) = {avg_deg, 'out', 'geo', 'geo'};
+network_params(3, :) = {avg_deg, 'out', 'geo', 'geo'};
 show_plots = true;
 display_network = true;
 
@@ -31,6 +31,8 @@ plot_or_not = true;
 transport_dev_frac = 0.0; % setting this number between 0 and 1 changes stochasticity of outbreak (0 is deterministic)
 storage_is_determ = true; % true is deterministic, false isn't
 
+%% UNCOMM
+
 % Simulate outbreak
 [contam_farm, contam_reports] = outbreak(dispersion, src_farm, dists, ...
     node_locs, flows, init_vols, num_stages, return_all_reports, ...
@@ -47,7 +49,7 @@ summary_stats = zeros([8, stage_ends(1)+2]);
 summary_stats(:, 1) = 4:11; % first col is method id, second is t_s_star, remaining cols are pmf
 
 for method_id = heuristic_methods
-    [pmf, t_s_stars] = time_traceback(method_id, flows, stage_ends, init_vols, contam_reports, distances, P, transport_dev_frac); 
+    [pmf, t_s_stars] = time_traceback(method_id, flows, stage_ends, init_vols, contam_reports, distances, P, transport_dev_frac);
     summary_stats(method_id-3, 2) = t_s_stars(1);
     summary_stats(method_id-3, 3:end) = pmf;
 end
@@ -60,6 +62,7 @@ end
 '[Method_ID    t_s_star_1    [pmf ...]]'
 
 summary_stats
+
 
 
 
