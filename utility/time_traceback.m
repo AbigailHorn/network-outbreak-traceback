@@ -61,7 +61,7 @@ switch estimator
         time_estimates = time_pmf(2, :);
     
     case 6 % MaxP heuristic: time alone, exact (integrated)
-        time_pmf = heuristic_time_pmf('MaxP', 't_s_star', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
+        time_pmf = heuristic_time_pmf('MaxP', 'exact', feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac);
         pmf = time_pmf(1,:).*prior_pmf;
         time_estimates = NaN * ones(size(pmf));
         
@@ -160,7 +160,7 @@ function pmf = exact_estimator(use_volumes, feasible_sources, contam_reports, fl
             c_s = c_matrix(paths, edge_data);
             
             if use_volumes
-                vol_term = exp(ones([1, num_reports]) * c_s * edge_data(:,4));
+                vol_term = log(exp(ones([1, num_reports]) * c_s * log(edge_data(:,4))));
                 time_term = exact_time_component_from_c(c_s, contam_reports, edge_data, transport_dev_frac);
                 prob = prob + vol_term * time_term;
             else
@@ -195,7 +195,7 @@ end
 % source
 function prob = exact_time_component_from_c(c_s, contam_reports, edge_data, transport_dev_frac)
     mu_theta = edge_data(:, 3) / 630; % mean travel time of each edge, in days
-    Sigma_theta = diag(transport_dev_frac * mu_theta); % CHANGE THIS COEFF
+    Sigma_theta = diag((transport_dev_frac * mu_theta).^2); 
     t_vec = contam_reports(2, :).';
     mu_d = ones(size(t_vec)) * 8.5; % mean delay from 2 rounds of storage + incubation times
     
@@ -233,11 +233,18 @@ function time_pmf = heuristic_time_pmf(heuristic, t_estimator, feasible_sources,
                     characteristic_contam_reports(2, col_of_node) = time(2);
                 end
             end % end for 
+            % initialize the necessary biograph object (for later shortest-path-finding)
+            bg = biograph(distances);
         case 'MaxP'
             for col = 1:length(characteristic_contam_reports(1,:))
                 node = characteristic_contam_reports(1, col);
                 reports_of_node = contam_reports(:, contam_reports(1, :) == node);
                 characteristic_contam_reports(2, col) = mean(reports_of_node(2, :)); % set 'characteristic time' as mean reported time        end % end for
+            % initialize the necessary biograph object (for later MaxP-path-finding)
+            % transform to reduce the problem to one of shortest-path searching
+            transf_flows = 1 - log(flows);
+            transf_flows(transf_flows == Inf) = 0; % replace every resulting in Inf with 0
+            bg = biograph(transf_flows);
             end
     end % end switch
 
@@ -261,9 +268,9 @@ function time_pmf = heuristic_time_pmf(heuristic, t_estimator, feasible_sources,
     for s = feasible_sources
         switch heuristic
             case 'bfs'
-                c_s = c_shortest(s, characteristic_contam_reports(1,:), flows, edge_data); % c matrix representing shortest path tree to O from s
+                c_s = c_shortest(s, characteristic_contam_reports(1,:), bg, edge_data); % c matrix representing shortest path tree to O from s
             case 'MaxP'
-                c_s = c_MaxP(s, characteristic_contam_reports(1,:), flows, edge_data); % c matrix representing most likely path tree to O from s
+                c_s = c_MaxP(s, characteristic_contam_reports(1,:), bg, edge_data); % c matrix representing most likely path tree to O from s
         end
         
         switch t_estimator
@@ -284,7 +291,7 @@ end % end bfs_time_estimator
 % uses t_s*
 function [prob, t_s_star] = time_estimator_from_c(c_s, contam_reports, edge_data, transport_dev_frac)
     mu_theta = edge_data(:, 3) / 630; % mean travel time of each edge, in days
-    Sigma_theta = diag(transport_dev_frac * mu_theta); % CHANGE THIS COEFF
+    Sigma_theta = diag((transport_dev_frac * mu_theta).^2); 
     t_vec = contam_reports(2, :).';
     mu_d = ones(size(t_vec)) * 8.5; % mean delay from 2 rounds of storage + incubation times
     
@@ -329,9 +336,7 @@ end
 
 % directly return the relevant c matrix data structure
 % this one is based on distance! 
-function c_s = c_shortest(s, contam_nodes, dists, edge_data)
-    % prepare for shortest-path search over distances
-    dists_bg = biograph(dists);
+function c_s = c_shortest(s, contam_nodes, dists_bg, edge_data)
     
     paths = [];
     % compute shortest cascade
@@ -347,11 +352,11 @@ end
 % directly return the relevant c matrix data structure
 % this is for the 'mean' heuristic
 % edge_data(s) = [from to dist] (note that edge_data(:, 3)) = theta
-function c_s = c_MaxP(s, contam_nodes, flows, edge_data)
+function c_s = c_MaxP(s, contam_nodes, transf_flows_bg, edge_data)
     paths = [];
     % compute max cascade
     for node_ID = contam_nodes % create matrix data structure. first col is probability of path; remaining cols are nodes in path
-        [~, path] = max_prob_path(s, node_ID, flows); % each row is a different path     
+        [~, path] = max_prob_path(s, node_ID, transf_flows_bg); % each row is a different path     
         paths = [paths; path];
     end % end for 
   
@@ -378,23 +383,6 @@ function c_s = c_matrix(paths, edge_data)
         end % end for 
     end % end for
 end
-       
-
-function [mean, std_dev] = path_prob_stats(path, dists)
-    % get the path time
-    total_dist = 0; % initialize total path dist
-    for i = 2:length(path) % for each edge in the path
-        total_dist = total_dist + dists(path(i-1), path(i)); % deterministic time component 
-    end % end for
-    
-    mean = total_dist/630; % deterministic distance travel component
-    determ_variance = (0.25*mean)*(0.25*mean); % according to "propagatio ratio"
-    mean = mean + 8.5; % add offset mu_ab as given in travel time densities specs
-    % truncate mean appropriately
-    %mean = max(mean, total_dist/20);
-    %mean = min(mean, total_dist/80);
-    std_dev = sqrt(determ_variance + 1.5*1.5 + 3*3 + 1*1); % + 15.25 % likewise add offset, also convert from variance to std_dev
-end % end function
 
 
 % start_node = ID of path start node
@@ -402,12 +390,7 @@ end % end function
 % flows = the adjacency matrix of the network we're operating over
 % path = [start_node ... ... end_node]; where path(i) is the i-th node in
 % the max probability path from start to end
-function [prob, path] = max_prob_path(start_node, end_node, flows)
-    % transform to reduce the problem to one of shortest-path searching
-    transf_flows = 1 - log(flows);
-    transf_flows(transf_flows == Inf) = 0; % replace every resulting in Inf with 0
-    transf_flows_bg = biograph(transf_flows);
-
+function [prob, path] = max_prob_path(start_node, end_node, transf_flows_bg)
     [prob, path, ~] = shortestpath(transf_flows_bg, start_node, end_node, 'Method', 'Acyclic');
     prob = exp(-(prob - length(path)+1)); 
 end 
