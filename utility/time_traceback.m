@@ -103,6 +103,7 @@ end % end function
 % use_volume = a boolean, telling you whether to include volume in the estimator or not
 % ('MaxP', 't_s_star', feasible_sources, contam_reports, flows, distances, stage_ends);
 function pmf = exact_estimator(use_volumes, feasible_sources, contam_reports, flows, distances, stage_ends, transport_dev_frac)
+    contam_reports
     % initialize time_pmf to correct size
     pmf = zeros([1, stage_ends(1)]); % one row for probability (no t_s* generated)
     num_reports = length(contam_reports(1,:));
@@ -123,7 +124,10 @@ function pmf = exact_estimator(use_volumes, feasible_sources, contam_reports, fl
         unique_contam_nodes = unique(contam_reports(1,:)); % maintain stable index
         unique_paths = cell([1, length(unique(contam_reports(1,:)))]); % stores a matrix of paths s --> contam_node at each index
         for contam_node = unique_contam_nodes
-            unique_paths{find(unique_contam_nodes == contam_node)} = all_paths_between(s, contam_node, flows);
+            node_ind = find(unique_contam_nodes == contam_node);
+            unique_paths{node_ind} = all_paths_between(s, contam_node, flows);
+            strcat('paths between', num2str(contam_node), 'and', num2str(s)) % debugging
+            unique_paths{node_ind} % debugging
         end % end for
         
         % calculate number of unique diffusion trajectories
@@ -144,6 +148,7 @@ function pmf = exact_estimator(use_volumes, feasible_sources, contam_reports, fl
         % sum probability contribution from every diffusion trajectory
         
         prob = 0;
+        %last_paths = zeros([num_reports, 4]); % for debugging
         
         for diff_traj = 0:(num_diff_trajs-1)
             if mod(diff_traj, 1000) == 0
@@ -156,6 +161,9 @@ function pmf = exact_estimator(use_volumes, feasible_sources, contam_reports, fl
                 unique_ind_of_node = find(unique_contam_nodes==contam_reports(1, observation));
                 paths(observation, :) = unique_paths{unique_ind_of_node}(active_paths(observation), :); % retrieve the right path
             end
+            
+            %diff_traj
+            %paths
             
             c_s = c_matrix(paths, edge_data);
             
@@ -172,7 +180,7 @@ function pmf = exact_estimator(use_volumes, feasible_sources, contam_reports, fl
             keep_checking = true; % sadly, complicated logical path needed because and() args don't eval left-to-right
             while keep_checking
                 if ind_of_largest_divisor < num_reports
-                    if mod(diff_traj, incr_paths_after(ind_of_largest_divisor + 1)) == 0
+                    if mod(diff_traj+1, incr_paths_after(ind_of_largest_divisor + 1)) == 0
                         ind_of_largest_divisor = ind_of_largest_divisor + 1; % if two conditions satisfied, incr
                     else
                         keep_checking = false; % if one fails, stop incrementing or checking
@@ -182,8 +190,11 @@ function pmf = exact_estimator(use_volumes, feasible_sources, contam_reports, fl
                 end % end if
             end % end while
             
+            %ind_of_largest_divisor
             active_paths(1:ind_of_largest_divisor-1) = ones([1, ind_of_largest_divisor-1]); % reset all before the val getting incremented
-            active_paths(ind_of_largest_divisor) = 1; % increment the rightmost possible value
+            active_paths(ind_of_largest_divisor) = active_paths(ind_of_largest_divisor) + 1; % increment the rightmost possible value
+            %changed = find(sum(paths, 2) - sum(last_paths, 2)) % which path rows aren't the same as last time?
+            %last_paths = paths;
         end % end for over diff trajs
         pmf(s) = prob;
     end % end for over possible sources
