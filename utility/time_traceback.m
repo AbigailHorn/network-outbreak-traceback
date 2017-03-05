@@ -15,7 +15,6 @@
 % time_estimates = a row vector of the maximum likelihood start time for hypothetical contamination from each source
 
 function [pmf, time_estimates] = time_traceback(estimator, flows, stage_ends, prior_pmf, contam_reports, distances, P, transport_dev_frac)
-
 pmf = zeros([1, stage_ends(1)]); % pmf will eventually be row vect of a prob for each potential source
 flows = sparse(flows); % for runtime
 
@@ -251,12 +250,12 @@ function time_pmf = heuristic_time_pmf(heuristic, t_estimator, feasible_sources,
                 node = characteristic_contam_reports(1, col);
                 reports_of_node = contam_reports(:, contam_reports(1, :) == node);
                 characteristic_contam_reports(2, col) = mean(reports_of_node(2, :)); % set 'characteristic time' as mean reported time        end % end for
+            end
             % initialize the necessary biograph object (for later MaxP-path-finding)
             % transform to reduce the problem to one of shortest-path searching
             transf_flows = 1 - log(flows);
             transf_flows(transf_flows == Inf) = 0; % replace every resulting in Inf with 0
             bg = biograph(transf_flows);
-            end
     end % end switch
 
     % start maintaining edge_data, such that edge_data(k) = [from to length]
